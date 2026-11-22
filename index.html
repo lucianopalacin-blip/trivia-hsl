@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trivia · Historia Social Latinoamericana</title>
+<style>
+:root{--bg:#14161a;--fg:#e8e6e1;--mut:#8a8f98;--card:#1e2127;--ac:#d9a441;--ok:#3fa66b;--bad:#c94f4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 system-ui,sans-serif}
+main{max-width:640px;margin:auto;padding:16px}
+h1{font-size:20px;margin:4px 0 16px}
+.btn{display:block;width:100%;padding:14px;margin:8px 0;border:1px solid #333a44;border-radius:12px;
+ background:var(--card);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.btn.pri{background:var(--ac);color:#111;border:0;text-align:center;font-weight:600}
+.btn.ok{border-color:var(--ok);background:#1f3a2b}.btn.bad{border-color:var(--bad);background:#3d2222}
+.row{display:flex;gap:8px}.row .btn{text-align:center}
+.mut{color:var(--mut);font-size:14px}
+.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#2a2f38;margin-right:6px}
+.exp{background:var(--card);border-radius:12px;padding:12px;margin:10px 0}
+.bar{height:8px;background:#2a2f38;border-radius:9px;overflow:hidden;margin:4px 0 12px}
+.bar i{display:block;height:100%;background:var(--ok)}
+nav{display:flex;gap:8px;margin-bottom:12px}nav .btn{margin:0;padding:10px;text-align:center;font-size:15px}
+</style>
+</head>
+<body><main id="app">Cargando…</main>
+<input type="file" id="imp" accept=".json" hidden>
+<script>
+const $=document.getElementById('app');
+const KEY='trivia-hsl';
+const DIF={f:'Fácil',m:'Media',d:'Difícil',x:'Mezcla'};
+let Q=[],S,dif='x',cur=null,perm=[];
+
+function nuevo(){return {q:{},t:{},r:[],n:0}}
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||nuevo()}catch(e){return nuevo()}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+S=load();
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const st=id=>S.q[id]||(S.q[id]={a:0,e:0});
+const aprendida=q=>(S.q[q.id]?.a||0)>=3;
+const enDif=q=>dif==='x'||q.dif===dif;
+const rnd=a=>a[Math.floor(Math.random()*a.length)];
+const nav=()=>`<nav><button class="btn" onclick="menu()">Inicio</button><button class="btn" onclick="progreso()">Progreso</button></nav>`;
+
+fetch('preguntas.json').then(r=>r.json()).then(d=>{Q=d;menu()})
+ .catch(()=>{$.innerHTML='No pude cargar preguntas.json'});
+
+function menu(){
+ $.innerHTML=`<h1>Trivia · Historia Social Latinoamericana</h1>
+ <p class="mut">${Q.length} preguntas · ${new Set(Q.map(q=>q.texto)).size} textos · ${Q.filter(aprendida).length} aprendidas</p>
+ ${['f','m','d','x'].map(k=>`<button class="btn pri" onclick="jugar('${k}')">${DIF[k]}</button>`).join('')}
+ <button class="btn" onclick="progreso()">Progreso por texto</button>
+ <div class="row"><button class="btn" onclick="exportar()">Exportar progreso</button>
+ <button class="btn" onclick="document.getElementById('imp').click()">Importar</button></div>`;
+}
+
+function jugar(k){dif=k;siguiente()}
+
+function elegir(){
+ const pool=Q.filter(q=>enDif(q)&&!aprendida(q));
+ if(!pool.length)return null;
+ // 1) errores que ya "vencieron" (vuelven a las 5-10 preguntas)
+ const i=S.r.findIndex(x=>x.d<=S.n&&pool.some(q=>q.id===x.id));
+ if(i>=0){const id=S.r[i].id;S.r.splice(i,1);return Q.find(q=>q.id===id)}
+ // 2) texto que menos salió
+ const textos=[...new Set(pool.map(q=>q.texto))];
+ const min=Math.min(...textos.map(t=>S.t[t]||0));
+ const t=rnd(textos.filter(t=>(S.t[t]||0)===min));
+ const cand=pool.filter(q=>q.texto===t);
+ const vistas=q=>(S.q[q.id]?.a||0)+(S.q[q.id]?.e||0);
+ const mv=Math.min(...cand.map(vistas));
+ return rnd(cand.filter(q=>vistas(q)===mv));
+}
+
+function siguiente(){
+ cur=elegir();
+ if(!cur){$.innerHTML=nav()+`<h1>¡Todo aprendido en ${DIF[dif]}!</h1><p class="mut">Probá otra dificultad.</p>`;return}
+ S.t[cur.texto]=(S.t[cur.texto]||0)+1;save();
+ perm=[0,1,2,3].sort(()=>Math.random()-.5);
+ $.innerHTML=nav()+`<p><span class="tag">${DIF[cur.dif]}</span><span class="tag">${DIF[dif]}</span></p>
+ <h1>${esc(cur.p)}</h1>
+ ${perm.map((o,i)=>`<button class="btn" id="o${i}" onclick="responder(${i})">${esc(cur.o[o])}</button>`).join('')}`;
+}
+
+function responder(i){
+ const bien=perm[i]===cur.c, s=st(cur.id);
+ S.n++;
+ S.r=S.r.filter(x=>x.id!==cur.id);
+ if(bien)s.a++;else{s.e++;S.r.push({id:cur.id,d:S.n+5+Math.floor(Math.random()*6)})}
+ save();
+ perm.forEach((o,j)=>{const b=document.getElementById('o'+j);b.disabled=true;
+  if(o===cur.c)b.classList.add('ok');else if(j===i)b.classList.add('bad')});
+ $.insertAdjacentHTML('beforeend',`<div class="exp"><b>${bien?'✔ Correcta':'✘ Incorrecta'}</b><br>${esc(cur.e)}
+ <p class="mut">${esc(cur.texto)} · aciertos ${s.a}/3${aprendida(cur)?' · aprendida':''}</p></div>
+ <button class="btn pri" onclick="siguiente()">Siguiente</button>`);
+ window.scrollTo(0,document.body.scrollHeight);
+}
+
+function progreso(){
+ const por={};
+ Q.forEach(q=>{const p=por[q.texto]||(por[q.texto]={n:0,ap:0,e:0});
+  p.n++;if(aprendida(q))p.ap++;p.e+=S.q[q.id]?.e||0});
+ const filas=Object.entries(por).sort((a,b)=>a[1].ap/a[1].n-b[1].ap/b[1].n);
+ $.innerHTML=nav()+`<h1>Progreso</h1>`+filas.map(([t,p])=>{const pc=Math.round(100*p.ap/p.n);
+  return `<div>${esc(t)}<div class="mut">${pc}% aprendido · ${p.ap}/${p.n} · ${p.e} errores</div>
+  <div class="bar"><i style="width:${pc}%"></i></div></div>`}).join('');
+}
+
+function exportar(){
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));
+ a.download='progreso-trivia-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+}
+document.getElementById('imp').onchange=e=>{
+ const f=e.target.files[0];if(!f)return;
+ f.text().then(t=>{const d=JSON.parse(t);if(!d.q||!d.t)throw 0;S=Object.assign(nuevo(),d);save();menu()})
+  .catch(()=>{$.insertAdjacentHTML('afterbegin','<p class="mut">Archivo inválido.</p>')});
+ e.target.value='';
+};
+</script>
+</body>
+</html>
