@@ -28,29 +28,37 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)
 input[type=number]{width:100px;padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--card);color:var(--fg);font:inherit}
 nav{display:flex;gap:8px;margin-bottom:12px}nav .btn{margin:0;padding:10px;text-align:center;font-size:15px}
 .sticky{position:sticky;bottom:0;background:var(--bg);padding:8px 0}
+#fondo{position:fixed;inset:0;background:center/cover no-repeat;filter:brightness(.3) blur(1.5px);transform:scale(1.03);z-index:-1;opacity:0;transition:opacity .5s}
+#fondo.on{opacity:1}
+.btn:not(.pri),.exp{background-color:rgba(30,33,39,.82)}.btn.ok{background-color:rgba(31,58,43,.9)}.btn.bad{background-color:rgba(61,34,34,.9)}
 </style>
 </head>
-<body><main id="app">Cargando…</main>
+<body><div id="fondo"></div><main id="app">Cargando…</main>
 <input type="file" id="imp" accept=".json" hidden>
 <script>
 const $=document.getElementById('app');
 const KEY='trivia-hsl', KEYF='trivia-hsl-filtros';
 const DIF={f:'Fácil',m:'Media',d:'Difícil',x:'Mezcla'};
 const MODO={n:'Normal',e:'Solo mis errores',v:'Solo nuevas'};
+const FMT={o:'Opciones',t:'Tarjeta',a:'¿De qué texto?',c:'Cronología'};
 const PAISES=['México','Brasil','Bolivia','Cuba','Chile','General'];
-let Q=[],cur=null,perm=[];
+let Q=[],cur=null,perm=[],aOpts=[],CR=[],crSel=[];
 
-function nuevo(){return {q:{},t:{},r:[],n:0}}
+function nuevo(){return {q:{},t:{},r:[],n:0,x:{},f:{a:{a:0,e:0},c:{a:0,e:0}}}}
 function leer(k,d){try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}}
 function guardar(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-let S=leer(KEY,nuevo());
-const FD={dif:'x',modo:'n',pais:[],temas:[],tipo:[],clase:[],desde:'',hasta:''};
+let S=leer(KEY,nuevo());S.x=S.x||{};S.f=S.f||nuevo().f;
+let detOpen=false;
+const FD={fmt:[],dif:'x',modo:'n',pais:[],temas:[],tipo:[],clase:[],textos:[],desde:'',hasta:''};
 let F=Object.assign({},FD,leer(KEYF,{}));
 const save=()=>guardar(KEY,S), saveF=()=>guardar(KEYF,F);
 
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const st=id=>S.q[id]||(S.q[id]={a:0,e:0});
-const aprendida=q=>(S.q[q.id]?.a||0)>=3;
+// Aprendida: acertada de primera, o 2 aciertos seguidos después de un error.
+const aprendida=q=>{const s=S.q[q.id];if(!s)return false;
+ if(s.r===undefined)return s.a>=3; // progreso viejo
+ return (s.e===0&&s.a>=1)||s.r>=2};
 const rnd=a=>a[Math.floor(Math.random()*a.length)];
 const uniq=f=>[...new Set(Q.flatMap(f).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
 const nav=()=>`<nav><button class="btn" onclick="menu()">Filtros</button><button class="btn" onclick="progreso()">Progreso</button></nav>`;
@@ -59,6 +67,8 @@ fetch('preguntas.json').then(r=>r.json()).then(d=>{Q=d;menu()})
  .catch(()=>{$.innerHTML='No pude cargar preguntas.json'});
 
 function pasa(q){
+ if(S.x[q.id])return false;
+ if(F.textos.length&&!F.textos.includes(q.texto))return false;
  if(F.dif!=='x'&&q.dif!==F.dif)return false;
  if(F.pais.length&&!F.pais.includes(q.pais))return false;
  if(F.tipo.length&&!F.tipo.includes(q.tipo))return false;
@@ -79,16 +89,23 @@ function grupo(titulo,k,vals,etq,multi){
 }
 
 function menu(){
+ fondo(null);
  const anios=Q.flatMap(q=>[q.desde,q.hasta]).filter(x=>x!=null);
  const n=Q.filter(pasa).length;
  $.innerHTML=`<h1>Trivia · Historia Social Latinoamericana</h1>
  <p class="mut">${Q.length} preguntas · ${Q.filter(aprendida).length} aprendidas</p>
+ ${grupo('Formato','fmt',['o','t','a','c'],FMT,true)}
  ${grupo('Dificultad','dif',['f','m','d','x'],DIF,false)}
  ${grupo('Modo','modo',['n','e','v'],MODO,false)}
  ${grupo('País','pais',PAISES.filter(p=>Q.some(q=>q.pais===p)),null,true)}
  ${grupo('Tema','temas',uniq(q=>q.temas||[]),null,true)}
  ${grupo('Tipo de texto','tipo',uniq(q=>[q.tipo]),null,true)}
  ${grupo('Clase','clase',uniq(q=>[q.clase]),null,true)}
+ <h2>Textos <span class="mut">(ninguno = todos)</span></h2>
+ <details ${detOpen?'open':''} ontoggle="detOpen=this.open"><summary class="mut" style="padding:8px 0">${F.textos.length?F.textos.length+' elegido(s) — tocá para cambiar':'Elegir textos'}</summary>
+ ${PAISES.map(pa=>{const ts=[...new Set(Q.filter(q=>q.pais===pa).map(q=>q.texto))].sort((a,b)=>a.localeCompare(b));
+  return ts.length?`<div class="mut" style="margin:10px 0 2px">${pa}</div>`+ts.map(t=>`<button class="chip${F.textos.includes(t)?' on':''}" data-k="textos" data-v="${esc(t)}" data-m="1">${esc(t)}</button>`).join(''):''}).join('')}
+ </details>
  <h2>Período</h2>
  <input type="number" id="desde" placeholder="${anios.length?Math.min(...anios):'desde'}" value="${F.desde}">
  – <input type="number" id="hasta" placeholder="${anios.length?Math.max(...anios):'hasta'}" value="${F.hasta}">
@@ -104,14 +121,14 @@ $.addEventListener('click',e=>{
  const c=e.target.closest('.chip');if(!c)return;
  const k=c.dataset.k,v=c.dataset.v;
  if(c.dataset.m==='1')F[k]=F[k].includes(v)?F[k].filter(x=>x!==v):[...F[k],v];else F[k]=v;
- saveF();menu();
+ const y=scrollY;saveF();menu();scrollTo(0,y);
 });
 
-function elegir(){
+function elegir(sinRepaso){
  const pool=Q.filter(pasa);
  if(!pool.length)return null;
  const ids=new Set(pool.map(q=>q.id));
- const i=S.r.findIndex(x=>x.d<=S.n&&ids.has(x.id));
+ const i=sinRepaso?-1:S.r.findIndex(x=>x.d<=S.n&&ids.has(x.id));
  if(i>=0){const id=S.r[i].id;S.r.splice(i,1);return Q.find(q=>q.id===id)}
  const textos=[...new Set(pool.map(q=>q.texto))];
  const min=Math.min(...textos.map(t=>S.t[t]||0));
@@ -121,37 +138,178 @@ function elegir(){
  const mv=Math.min(...cand.map(vistas));
  return rnd(cand.filter(q=>vistas(q)===mv));
 }
+const mezclar=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+const per=()=>cur.desde!=null?` · ${cur.desde}–${cur.hasta}`:'';
+const cab=f=>nav()+`<p><span class="tag">${FMT[f]}</span><span class="tag">${DIF[cur.dif]||''}</span>${cur.pais?`<span class="tag">${esc(cur.pais)}</span>`:''}${(cur.temas||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</p>`;
+const extra=()=>`<div class="row" id="extra"><button class="btn" onclick="saltar()">Saltar</button><button class="btn" onclick="descartar()">No preguntar más</button></div>`;
+const sig=`<button class="btn pri" onclick="siguiente()">Siguiente</button>`;
 
-function siguiente(){
- cur=elegir();
- if(!cur){$.innerHTML=nav()+`<h1>No quedan preguntas con estos filtros</h1><p class="mut">Están todas aprendidas. Cambiá los filtros.</p>`;return}
- S.t[cur.texto]=(S.t[cur.texto]||0)+1;save();
- perm=[0,1,2,3].sort(()=>Math.random()-.5);
- $.innerHTML=nav()+`<p><span class="tag">${DIF[cur.dif]}</span>${cur.pais?`<span class="tag">${esc(cur.pais)}</span>`:''}${(cur.temas||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</p>
- <h1>${esc(cur.p)}</h1>
- ${perm.map((o,i)=>`<button class="btn" id="o${i}" onclick="responder(${i})">${esc(cur.o[o])}</button>`).join('')}`;
+
+// --- Fondos: primera palabra clave que coincide; si no, foto del país ---
+const FOTOS=[
+ ['tlatelolco|1968|plaza de las tres culturas','tlatelolco'],
+ ['zapata|zapatis|ayala|morelos','zapata'],
+ ['\\bvilla\\b|villis|division del norte','villa'],
+ ['madero|san luis potosi','madero'],
+ ['carranza|constitucionalis|constitucion de 1917|queretaro','carranza'],
+ ['cardenas|cardenis|expropiacion petrolera|ejido','cardenas'],
+ ['porfir|\\bdiaz\\b','porfirio'],
+ ['domitila','domitila'],
+ ['\\bevo\\b|guerra del agua|guerra del gas|cochabamba','evo'],
+ ['katari|aymara|zarate willka|choque canqui|indigena','indigenas-bolivia'],
+ ['pulacayo|colquiri|catavi|siglo xx|comibol|\\bcob\\b|minero|mina','mineros-bolivia'],
+ ['1952|\\bmnr\\b|paz estenssoro|revolucion nacional','revolucion-52'],
+ ['guevara|\\bche\\b|hombre nuevo','che'],
+ ['zafra|azucar|ingenio|plantacion|esclav.*cuba|moreno fraginals','zafra'],
+ ['1959|sierra maestra|moncada|26 de julio|batista|absolvera','habana59'],
+ ['fidel|castro','fidel'],
+ ['pinochet|golpe|1973|dictadura|autoritari','golpe73'],
+ ['el teniente|klubock','mineros-chile'],
+ ['allende|unidad popular|cobre|nacionalizacion','allende'],
+ ['canudos|sertones|sertao|conselheiro|euclides','canudos'],
+ ['tropicali|veloso|caetano','tropicalia'],
+ ['esclav|abolicion|racismo|schwarcz','esclavitud'],
+ ['vargas|estado novo|getuli|trabalhis','vargas'],
+].map(([r,f])=>[new RegExp(r),f]);
+const FPAIS={'México':'mexico','Bolivia':'bolivia','Cuba':'cuba','Chile':'chile','Brasil':'brasil'};
+const norm=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const fondoEl=document.getElementById('fondo');
+function fondo(q){
+ fondoEl.classList.remove('on');
+ if(!q)return;
+ const txt=norm([q.p,q.o&&q.o[q.c],q.texto,(q.temas||[]).join(' ')].join(' '));
+ const lista=FOTOS.filter(([r])=>r.test(txt)).map(([,f])=>f);
+ if(FPAIS[q.pais])lista.push(FPAIS[q.pais]);
+ const prueba=i=>{if(i>=lista.length)return;const img=new Image(),u='img/'+lista[i]+'.jpg';
+  img.onload=()=>{fondoEl.style.backgroundImage=`url("${u}")`;fondoEl.classList.add('on')};
+  img.onerror=()=>prueba(i+1);img.src=u};
+ prueba(0);
 }
 
-function responder(i){
- const bien=perm[i]===cur.c, s=st(cur.id);
+function siguiente(){
+ const fs=F.fmt.length?F.fmt:['o','t','a','c'];
+ let f=rnd(fs);
+ if(f==='c'){if(crono())return;const r=fs.filter(x=>x!=='c');
+  if(!r.length){$.innerHTML=nav()+`<h1>No hay suficientes preguntas con fecha para ordenar</h1><p class="mut">Ampliá los filtros o elegí otro formato.</p>`;return}
+  f=rnd(r)}
+ cur=elegir(f==='a');
+ if(!cur){$.innerHTML=nav()+`<h1>No quedan preguntas con estos filtros</h1><p class="mut">Están todas aprendidas. Cambiá los filtros.</p>`;return}
+ S.t[cur.texto]=(S.t[cur.texto]||0)+1;save();
+ fondo(cur);
+ if(f==='t')tarjeta();else if(f==='a')autorQ();else opciones();
+ scrollTo(0,0);
+}
+
+// --- Opciones (multiple choice) ---
+function opciones(){
+ perm=mezclar([0,1,2,3]);
+ $.innerHTML=cab('o')+`<h1>${esc(cur.p)}</h1>
+ ${perm.map((o,i)=>`<button class="btn" id="o${i}" onclick="responder(${i})">${esc(cur.o[o])}</button>`).join('')}`+extra();
+}
+function registrar(bien){
+ const s=st(cur.id);
  S.n++;
  S.r=S.r.filter(x=>x.id!==cur.id);
- if(bien)s.a++;else{s.e++;S.r.push({id:cur.id,d:S.n+5+Math.floor(Math.random()*6)})}
- save();
+ if(s.r===undefined)s.r=0;
+ if(bien){s.a++;s.r++;if(!aprendida(cur))S.r.push({id:cur.id,d:S.n+15+Math.floor(Math.random()*11)})}
+ else{s.e++;s.r=0;S.r.push({id:cur.id,d:S.n+5+Math.floor(Math.random()*6)})}
+ save();return s;
+}
+const estado=s=>aprendida(cur)?'aprendida ✔':s.e?`vuelve más adelante · le falta${s.r>=1?' 1 acierto':'n 2 aciertos seguidos'}`:'';
+function responder(i){
+ const bien=perm[i]===cur.c, s=registrar(bien);
+ document.getElementById('extra')?.remove();
  perm.forEach((o,j)=>{const b=document.getElementById('o'+j);b.disabled=true;
   if(o===cur.c)b.classList.add('ok');else if(j===i)b.classList.add('bad')});
- const per=cur.desde!=null?` · ${cur.desde}–${cur.hasta}`:'';
  $.insertAdjacentHTML('beforeend',`<div class="exp"><b>${bien?'✔ Correcta':'✘ Incorrecta'}</b><br>${esc(cur.e)}
- <p class="mut">${esc(cur.texto)}${per} · aciertos ${s.a}/3${aprendida(cur)?' · aprendida':''}</p></div>
- <button class="btn pri" onclick="siguiente()">Siguiente</button>`);
+ <p class="mut">${esc(cur.texto)}${per()} · ${estado(s)}</p></div>`+sig);
  window.scrollTo(0,document.body.scrollHeight);
 }
 
+// --- Tarjeta (sin opciones, autoevaluación) ---
+function tarjeta(){
+ $.innerHTML=cab('t')+`<h1>${esc(cur.p)}</h1><p class="mut">Pensá la respuesta antes de mirarla.</p>
+ <button class="btn pri" id="ver" onclick="verTarjeta()">Ver respuesta</button>`+extra();
+}
+function verTarjeta(){
+ document.getElementById('ver').remove();document.getElementById('extra')?.remove();
+ $.insertAdjacentHTML('beforeend',`<div class="exp"><b>${esc(cur.o[cur.c])}</b><br>${esc(cur.e)}</div>
+ <div class="row" id="auto"><button class="btn ok" onclick="autoeval(1)">La sabía</button><button class="btn bad" onclick="autoeval(0)">No la sabía</button></div>`);
+ window.scrollTo(0,document.body.scrollHeight);
+}
+function autoeval(b){
+ const s=registrar(!!b);document.getElementById('auto').remove();
+ $.insertAdjacentHTML('beforeend',`<p class="mut">${esc(cur.texto)}${per()} · ${estado(s)}</p>`+sig);
+ window.scrollTo(0,document.body.scrollHeight);
+}
+
+// --- ¿De qué texto viene? ---
+const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+function tapar(txt,t){
+ const ws=t.split('_')[0].split(/[\s,.:;()]+/).filter(w=>w.length>=4);
+ return ws.reduce((s,w)=>s.replace(new RegExp(reEsc(w),'gi'),'___'),txt);
+}
+function autorQ(){
+ const todos=[...new Set(Q.map(q=>q.texto))].filter(t=>t!==cur.texto);
+ const mismo=mezclar(todos.filter(t=>Q.find(q=>q.texto===t).pais===cur.pais));
+ const otros=mezclar(todos.filter(t=>!mismo.includes(t)));
+ aOpts=mezclar([cur.texto,...mismo.concat(otros).slice(0,3)]);
+ $.innerHTML=cab('a')+`<h2>¿De qué texto viene esto?</h2>
+ <div class="exp"><b>${esc(tapar(cur.p,cur.texto))}</b><br>→ ${esc(tapar(cur.o[cur.c],cur.texto))}</div>
+ ${aOpts.map((t,i)=>`<button class="btn" id="o${i}" onclick="respAutor(${i})">${esc(t)}</button>`).join('')}`+extra();
+}
+function respAutor(i){
+ const bien=aOpts[i]===cur.texto;
+ S.n++;S.f.a[bien?'a':'e']++;save();
+ document.getElementById('extra')?.remove();
+ aOpts.forEach((t,j)=>{const b=document.getElementById('o'+j);b.disabled=true;
+  if(t===cur.texto)b.classList.add('ok');else if(j===i)b.classList.add('bad')});
+ $.insertAdjacentHTML('beforeend',`<div class="exp"><b>${bien?'✔ Correcto':'✘ Incorrecto'}</b><br>${esc(cur.e)}<p class="mut">${esc(cur.texto)}${per()}</p></div>`+sig);
+ window.scrollTo(0,document.body.scrollHeight);
+}
+
+// --- Cronología ---
+function crono(){
+ const pool=mezclar(Q.filter(pasa).filter(q=>q.desde!=null&&q.hasta!=null&&q.hasta-q.desde<=3));
+ const el=[];
+ for(const q of pool){if(el.every(x=>Math.abs(x.desde-q.desde)>=2))el.push(q);if(el.length===4)break}
+ if(el.length<4)return false;
+ CR=el;crSel=[];fondo(el[0]);
+ S.n++;save();
+ dibCrono();return true;
+}
+function dibCrono(fin){
+ const ok=[...CR].sort((a,b)=>a.desde-b.desde);
+ let h=nav()+`<p><span class="tag">${FMT.c}</span></p><h1>Ordená de más antiguo a más reciente</h1>
+ <p class="mut">Tocá en orden.</p>`;
+ h+=CR.map((q,i)=>{const n=crSel.indexOf(i);
+  const cls=fin?(ok[n]===q?' ok':' bad'):'';
+  return `<button class="btn${cls}" onclick="tocaCrono(${i})" ${n>=0?'disabled':''}>${n>=0?`<b>${n+1}.</b> `:''}<b>${esc(q.o[q.c])}</b>
+  <div class="mut">${esc(q.p)}</div>${fin?`<div class="mut">${q.desde}${q.hasta!==q.desde?'–'+q.hasta:''} · ${esc(q.texto)}</div>`:''}</button>`}).join('');
+ if(fin){const bien=crSel.every((i,n)=>ok[n]===CR[i]);
+  h+=`<div class="exp"><b>${bien?'✔ Orden correcto':'✘ El orden era:'}</b>${bien?'':'<br>'+ok.map((q,n)=>`${n+1}. ${esc(q.o[q.c])} (${q.desde})`).join('<br>')}</div>`+sig}
+ else if(crSel.length)h+=`<button class="btn" onclick="crSel=[];dibCrono()">Borrar y empezar de nuevo</button>`;
+ $.innerHTML=h;
+}
+function tocaCrono(i){
+ crSel.push(i);
+ if(crSel.length<CR.length){dibCrono();return}
+ const ok=[...CR].sort((a,b)=>a.desde-b.desde);
+ S.f.c[crSel.every((i,n)=>ok[n]===CR[i])?'a':'e']++;save();
+ dibCrono(true);window.scrollTo(0,document.body.scrollHeight);
+}
+
+function saltar(){S.n++;S.r=S.r.filter(x=>x.id!==cur.id);S.r.push({id:cur.id,d:S.n+20});save();siguiente()}
+function descartar(){S.x[cur.id]=1;S.r=S.r.filter(x=>x.id!==cur.id);save();siguiente()}
+
 function progreso(){
+ fondo(null);
  const por={};
- Q.forEach(q=>{const p=por[q.texto]||(por[q.texto]={pais:q.pais||'General',n:0,ap:0,e:0});
+ Q.filter(q=>!S.x[q.id]).forEach(q=>{const p=por[q.texto]||(por[q.texto]={pais:q.pais||'General',n:0,ap:0,e:0});
   p.n++;if(aprendida(q))p.ap++;p.e+=S.q[q.id]?.e||0});
  let h=nav()+`<h1>Progreso</h1>`;
+ const fa=S.f.a,fc=S.f.c;
+ if(fa.a+fa.e+fc.a+fc.e)h+=`<p class="mut">¿De qué texto?: ${fa.a}/${fa.a+fa.e} · Cronología: ${fc.a}/${fc.a+fc.e}</p>`;
  PAISES.concat([undefined]).forEach(pa=>{
   const filas=Object.entries(por).filter(([,p])=>pa?p.pais===pa:!PAISES.includes(p.pais))
    .sort((a,b)=>a[1].ap/a[1].n-b[1].ap/b[1].n);
