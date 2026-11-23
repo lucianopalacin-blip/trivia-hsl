@@ -5,64 +5,114 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trivia · Historia Social Latinoamericana</title>
 <style>
-:root{--bg:#14161a;--fg:#e8e6e1;--mut:#8a8f98;--card:#1e2127;--ac:#d9a441;--ok:#3fa66b;--bad:#c94f4f}
+:root{--bg:#14161a;--fg:#e8e6e1;--mut:#8a8f98;--card:#1e2127;--ac:#d9a441;--ok:#3fa66b;--bad:#c94f4f;--ln:#333a44}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 system-ui,sans-serif}
-main{max-width:640px;margin:auto;padding:16px}
-h1{font-size:20px;margin:4px 0 16px}
-.btn{display:block;width:100%;padding:14px;margin:8px 0;border:1px solid #333a44;border-radius:12px;
+main{max-width:640px;margin:auto;padding:16px 16px 40px}
+h1{font-size:20px;margin:4px 0 12px}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:18px 0 6px}
+.btn{display:block;width:100%;padding:14px;margin:8px 0;border:1px solid var(--ln);border-radius:12px;
  background:var(--card);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
 .btn.pri{background:var(--ac);color:#111;border:0;text-align:center;font-weight:600}
 .btn.ok{border-color:var(--ok);background:#1f3a2b}.btn.bad{border-color:var(--bad);background:#3d2222}
+.btn:disabled{opacity:.5}
 .row{display:flex;gap:8px}.row .btn{text-align:center}
 .mut{color:var(--mut);font-size:14px}
-.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#2a2f38;margin-right:6px}
+.chip{display:inline-block;padding:8px 12px;margin:3px;border-radius:99px;border:1px solid var(--ln);
+ background:var(--card);color:var(--fg);font:15px system-ui,sans-serif;cursor:pointer}
+.chip.on{background:var(--ac);color:#111;border-color:var(--ac)}
+.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#2a2f38;margin:0 6px 4px 0}
 .exp{background:var(--card);border-radius:12px;padding:12px;margin:10px 0}
 .bar{height:8px;background:#2a2f38;border-radius:9px;overflow:hidden;margin:4px 0 12px}
 .bar i{display:block;height:100%;background:var(--ok)}
+input[type=number]{width:100px;padding:10px;border-radius:10px;border:1px solid var(--ln);background:var(--card);color:var(--fg);font:inherit}
 nav{display:flex;gap:8px;margin-bottom:12px}nav .btn{margin:0;padding:10px;text-align:center;font-size:15px}
+.sticky{position:sticky;bottom:0;background:var(--bg);padding:8px 0}
 </style>
 </head>
 <body><main id="app">Cargando…</main>
 <input type="file" id="imp" accept=".json" hidden>
 <script>
 const $=document.getElementById('app');
-const KEY='trivia-hsl';
+const KEY='trivia-hsl', KEYF='trivia-hsl-filtros';
 const DIF={f:'Fácil',m:'Media',d:'Difícil',x:'Mezcla'};
-let Q=[],S,dif='x',cur=null,perm=[];
+const MODO={n:'Normal',e:'Solo mis errores',v:'Solo nuevas'};
+const PAISES=['México','Brasil','Bolivia','Cuba','Chile','General'];
+let Q=[],cur=null,perm=[];
 
 function nuevo(){return {q:{},t:{},r:[],n:0}}
-function load(){try{return JSON.parse(localStorage.getItem(KEY))||nuevo()}catch(e){return nuevo()}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-S=load();
+function leer(k,d){try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}}
+function guardar(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+let S=leer(KEY,nuevo());
+const FD={dif:'x',modo:'n',pais:[],temas:[],tipo:[],clase:[],desde:'',hasta:''};
+let F=Object.assign({},FD,leer(KEYF,{}));
+const save=()=>guardar(KEY,S), saveF=()=>guardar(KEYF,F);
+
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const st=id=>S.q[id]||(S.q[id]={a:0,e:0});
 const aprendida=q=>(S.q[q.id]?.a||0)>=3;
-const enDif=q=>dif==='x'||q.dif===dif;
 const rnd=a=>a[Math.floor(Math.random()*a.length)];
-const nav=()=>`<nav><button class="btn" onclick="menu()">Inicio</button><button class="btn" onclick="progreso()">Progreso</button></nav>`;
+const uniq=f=>[...new Set(Q.flatMap(f).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+const nav=()=>`<nav><button class="btn" onclick="menu()">Filtros</button><button class="btn" onclick="progreso()">Progreso</button></nav>`;
 
 fetch('preguntas.json').then(r=>r.json()).then(d=>{Q=d;menu()})
  .catch(()=>{$.innerHTML='No pude cargar preguntas.json'});
 
+function pasa(q){
+ if(F.dif!=='x'&&q.dif!==F.dif)return false;
+ if(F.pais.length&&!F.pais.includes(q.pais))return false;
+ if(F.tipo.length&&!F.tipo.includes(q.tipo))return false;
+ if(F.clase.length&&!F.clase.includes(q.clase))return false;
+ if(F.temas.length&&!(q.temas||[]).some(t=>F.temas.includes(t)))return false;
+ if(F.desde!==''&&!(q.hasta>=+F.desde))return false;
+ if(F.hasta!==''&&!(q.desde<=+F.hasta))return false;
+ const s=S.q[q.id];
+ if(F.modo==='e'&&!(s&&s.e>0))return false;
+ if(F.modo==='v'&&s&&s.a+s.e>0)return false;
+ return !aprendida(q);
+}
+
+function grupo(titulo,k,vals,etq,multi){
+ return `<h2>${titulo}${multi?' <span class="mut">(ninguno = todos)</span>':''}</h2>`+vals.map(v=>{
+  const on=multi?F[k].includes(v):F[k]===v;
+  return `<button class="chip${on?' on':''}" data-k="${k}" data-v="${esc(v)}" data-m="${multi?1:0}">${esc(etq?etq[v]:v)}</button>`}).join('');
+}
+
 function menu(){
+ const anios=Q.flatMap(q=>[q.desde,q.hasta]).filter(x=>x!=null);
+ const n=Q.filter(pasa).length;
  $.innerHTML=`<h1>Trivia · Historia Social Latinoamericana</h1>
- <p class="mut">${Q.length} preguntas · ${new Set(Q.map(q=>q.texto)).size} textos · ${Q.filter(aprendida).length} aprendidas</p>
- ${['f','m','d','x'].map(k=>`<button class="btn pri" onclick="jugar('${k}')">${DIF[k]}</button>`).join('')}
+ <p class="mut">${Q.length} preguntas · ${Q.filter(aprendida).length} aprendidas</p>
+ ${grupo('Dificultad','dif',['f','m','d','x'],DIF,false)}
+ ${grupo('Modo','modo',['n','e','v'],MODO,false)}
+ ${grupo('País','pais',PAISES.filter(p=>Q.some(q=>q.pais===p)),null,true)}
+ ${grupo('Tema','temas',uniq(q=>q.temas||[]),null,true)}
+ ${grupo('Tipo de texto','tipo',uniq(q=>[q.tipo]),null,true)}
+ ${grupo('Clase','clase',uniq(q=>[q.clase]),null,true)}
+ <h2>Período</h2>
+ <input type="number" id="desde" placeholder="${anios.length?Math.min(...anios):'desde'}" value="${F.desde}">
+ – <input type="number" id="hasta" placeholder="${anios.length?Math.max(...anios):'hasta'}" value="${F.hasta}">
+ <div class="sticky"><button class="btn pri" onclick="siguiente()" ${n?'':'disabled'}>Jugar · ${n} preguntas</button></div>
+ <button class="btn" onclick="F=Object.assign({},FD);saveF();menu()">Limpiar filtros</button>
  <button class="btn" onclick="progreso()">Progreso por texto</button>
  <div class="row"><button class="btn" onclick="exportar()">Exportar progreso</button>
  <button class="btn" onclick="document.getElementById('imp').click()">Importar</button></div>`;
+ ['desde','hasta'].forEach(k=>document.getElementById(k).onchange=e=>{F[k]=e.target.value;saveF();menu()});
 }
 
-function jugar(k){dif=k;siguiente()}
+$.addEventListener('click',e=>{
+ const c=e.target.closest('.chip');if(!c)return;
+ const k=c.dataset.k,v=c.dataset.v;
+ if(c.dataset.m==='1')F[k]=F[k].includes(v)?F[k].filter(x=>x!==v):[...F[k],v];else F[k]=v;
+ saveF();menu();
+});
 
 function elegir(){
- const pool=Q.filter(q=>enDif(q)&&!aprendida(q));
+ const pool=Q.filter(pasa);
  if(!pool.length)return null;
- // 1) errores que ya "vencieron" (vuelven a las 5-10 preguntas)
- const i=S.r.findIndex(x=>x.d<=S.n&&pool.some(q=>q.id===x.id));
+ const ids=new Set(pool.map(q=>q.id));
+ const i=S.r.findIndex(x=>x.d<=S.n&&ids.has(x.id));
  if(i>=0){const id=S.r[i].id;S.r.splice(i,1);return Q.find(q=>q.id===id)}
- // 2) texto que menos salió
  const textos=[...new Set(pool.map(q=>q.texto))];
  const min=Math.min(...textos.map(t=>S.t[t]||0));
  const t=rnd(textos.filter(t=>(S.t[t]||0)===min));
@@ -74,10 +124,10 @@ function elegir(){
 
 function siguiente(){
  cur=elegir();
- if(!cur){$.innerHTML=nav()+`<h1>¡Todo aprendido en ${DIF[dif]}!</h1><p class="mut">Probá otra dificultad.</p>`;return}
+ if(!cur){$.innerHTML=nav()+`<h1>No quedan preguntas con estos filtros</h1><p class="mut">Están todas aprendidas. Cambiá los filtros.</p>`;return}
  S.t[cur.texto]=(S.t[cur.texto]||0)+1;save();
  perm=[0,1,2,3].sort(()=>Math.random()-.5);
- $.innerHTML=nav()+`<p><span class="tag">${DIF[cur.dif]}</span><span class="tag">${DIF[dif]}</span></p>
+ $.innerHTML=nav()+`<p><span class="tag">${DIF[cur.dif]}</span>${cur.pais?`<span class="tag">${esc(cur.pais)}</span>`:''}${(cur.temas||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</p>
  <h1>${esc(cur.p)}</h1>
  ${perm.map((o,i)=>`<button class="btn" id="o${i}" onclick="responder(${i})">${esc(cur.o[o])}</button>`).join('')}`;
 }
@@ -90,20 +140,28 @@ function responder(i){
  save();
  perm.forEach((o,j)=>{const b=document.getElementById('o'+j);b.disabled=true;
   if(o===cur.c)b.classList.add('ok');else if(j===i)b.classList.add('bad')});
+ const per=cur.desde!=null?` · ${cur.desde}–${cur.hasta}`:'';
  $.insertAdjacentHTML('beforeend',`<div class="exp"><b>${bien?'✔ Correcta':'✘ Incorrecta'}</b><br>${esc(cur.e)}
- <p class="mut">${esc(cur.texto)} · aciertos ${s.a}/3${aprendida(cur)?' · aprendida':''}</p></div>
+ <p class="mut">${esc(cur.texto)}${per} · aciertos ${s.a}/3${aprendida(cur)?' · aprendida':''}</p></div>
  <button class="btn pri" onclick="siguiente()">Siguiente</button>`);
  window.scrollTo(0,document.body.scrollHeight);
 }
 
 function progreso(){
  const por={};
- Q.forEach(q=>{const p=por[q.texto]||(por[q.texto]={n:0,ap:0,e:0});
+ Q.forEach(q=>{const p=por[q.texto]||(por[q.texto]={pais:q.pais||'General',n:0,ap:0,e:0});
   p.n++;if(aprendida(q))p.ap++;p.e+=S.q[q.id]?.e||0});
- const filas=Object.entries(por).sort((a,b)=>a[1].ap/a[1].n-b[1].ap/b[1].n);
- $.innerHTML=nav()+`<h1>Progreso</h1>`+filas.map(([t,p])=>{const pc=Math.round(100*p.ap/p.n);
-  return `<div>${esc(t)}<div class="mut">${pc}% aprendido · ${p.ap}/${p.n} · ${p.e} errores</div>
-  <div class="bar"><i style="width:${pc}%"></i></div></div>`}).join('');
+ let h=nav()+`<h1>Progreso</h1>`;
+ PAISES.concat([undefined]).forEach(pa=>{
+  const filas=Object.entries(por).filter(([,p])=>pa?p.pais===pa:!PAISES.includes(p.pais))
+   .sort((a,b)=>a[1].ap/a[1].n-b[1].ap/b[1].n);
+  if(!filas.length)return;
+  const tot=filas.reduce((s,[,p])=>s+p.n,0), ap=filas.reduce((s,[,p])=>s+p.ap,0);
+  h+=`<h2>${esc(pa||'Otros')} · ${Math.round(100*ap/tot)}%</h2>`+filas.map(([t,p])=>{const pc=Math.round(100*p.ap/p.n);
+   return `<div>${esc(t)}<div class="mut">${pc}% aprendido · ${p.ap}/${p.n} · ${p.e} errores</div>
+   <div class="bar"><i style="width:${pc}%"></i></div></div>`}).join('');
+ });
+ $.innerHTML=h;
 }
 
 function exportar(){
